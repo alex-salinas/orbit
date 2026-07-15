@@ -334,6 +334,9 @@ def main():
     original_termios = termios.tcgetattr(stdin)
     active_termios = termios.tcgetattr(stdin)
     active_termios[0] &= ~termios.IXON
+    # Deliver Ctrl-C as character 3 to curses instead of turning it into a
+    # SIGINT/KeyboardInterrupt. Orbit uses that key to stop its child shell.
+    active_termios[3] &= ~termios.ISIG
     termios.tcsetattr(stdin, termios.TCSADRAIN, active_termios)
     try:
         curses.wrapper(lambda screen: Orbit(screen, root).loop())
