@@ -78,6 +78,30 @@ class Orbit:
             if buf.path == path: self.active = i; self.focus = "editor"; return
         self.buffers.append(Buffer(path)); self.active = len(self.buffers)-1; self.focus = "editor"
 
+    def new_file(self):
+        """Create a project-local file and immediately open it in a tab."""
+        name = self.ask("New file (relative to project): ")
+        if not name:
+            return
+        target = (self.root / name).resolve()
+        try:
+            target.relative_to(self.root)
+        except ValueError:
+            self.message = "New files must be inside the project folder"
+            return
+        if target.exists():
+            self.message = f"Already exists: {target.name}"
+            self.open_file(target)
+            return
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.touch()
+            self.refresh_tree()
+            self.open_file(target)
+            self.message = f"Created {target.relative_to(self.root)}"
+        except OSError as error:
+            self.message = f"Could not create file: {error}"
+
     def active_buffer(self): return self.buffers[self.active] if self.buffers else None
 
     def draw(self):
@@ -218,7 +242,9 @@ class Orbit:
         b.top = min(b.top, b.row); b.top = b.row if b.row > b.top + 20 else b.top
 
     def handle(self, key):
-        if key == curses.KEY_F1: self.message = "Tab changes pane. F2 files. F3 shell. F5 opens SSH. :ssh HOST in shell also opens SSH. q quits."
+        if key == 17: self.running = False # Ctrl-Q
+        elif key == 14: self.new_file() # Ctrl-N
+        elif key == curses.KEY_F1: self.message = "Tab changes pane. Ctrl-N new file. Ctrl-Q quits. F2 files. F3 shell. F5 opens SSH."
         elif key == curses.KEY_F2: self.focus = "tree"
         elif key == curses.KEY_F3: self.focus = "terminal"
         elif key == curses.KEY_F5: self.open_ssh()
