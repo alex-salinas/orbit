@@ -118,17 +118,26 @@ class Orbit:
 
     def highlight_line(self, line, x, y, width):
         # Curses rendering with token colors; compact and intentionally language-agnostic.
+        # Match offsets are relative to the whole source line, so clip them before
+        # using them as screen coordinates (long lines otherwise exceed the pane).
+        visible = max(0, width - 1)
         matches = []
         for rx, color in ((COMMENTS, 5), (STRINGS, 3), (KEYWORDS, 4)):
             matches += [(m.start(), m.end(), color) for m in rx.finditer(line)]
         matches.sort()
         pos = 0
         for a, b, color in matches:
-            if a < pos: continue
-            self.s.addnstr(y, x + pos, line[pos:a], max(0, width-pos))
-            self.s.addnstr(y, x + a, line[a:b], max(0, width-a), curses.color_pair(color))
+            if a < pos or a >= visible: continue
+            b = min(b, visible)
+            try:
+                self.s.addnstr(y, x + pos, line[pos:a], a - pos)
+                self.s.addnstr(y, x + a, line[a:b], b - a, curses.color_pair(color))
+            except curses.error:
+                pass
             pos = b
-        self.s.addnstr(y, x + pos, line[pos:], max(0, width-pos))
+        if pos < visible:
+            try: self.s.addnstr(y, x + pos, line[pos:visible], visible - pos)
+            except curses.error: pass
 
     def draw_editor(self, x, y, width, height):
         buf = self.active_buffer()
