@@ -11,7 +11,6 @@ import queue
 import signal
 import subprocess
 import sys
-import termios
 import threading
 from pathlib import Path
 
@@ -194,7 +193,7 @@ class Orbit:
 
     def draw_terminal(self, x, y, width, height):
         self.s.hline(y-1, x, curses.ACS_HLINE, width)
-        running = f" ● pid {self.process.pid} — Ctrl-S stop" if self.process else ""
+        running = f" ● pid {self.process.pid} — Ctrl-C stop" if self.process else ""
         title = " SHELL " + ("[focus]" if self.focus == "terminal" else "") + running
         self.s.addnstr(y, x, title, width, curses.A_BOLD)
         visible = self.term_lines[-(height-3):]
@@ -286,7 +285,7 @@ class Orbit:
     def handle(self, key):
         if key == 17: self.running = False # Ctrl-Q
         elif key == 14: self.new_file() # Ctrl-N
-        elif key == curses.KEY_F1: self.message = "Ctrl-N new file • Ctrl-Q quit • Ctrl-S saves in editor / stops shell • Home/End (or Ctrl-A/E) line start/end"
+        elif key == curses.KEY_F1: self.message = "Ctrl-N new file • Ctrl-Q quit • Ctrl-S saves • Home/End (or Ctrl-A/E) line start/end • Ctrl-C stops shell"
         elif key == curses.KEY_F2: self.focus = "tree"
         elif key == curses.KEY_F3: self.focus = "terminal"
         elif key == curses.KEY_F5: self.open_ssh()
@@ -299,7 +298,7 @@ class Orbit:
             elif key == ord('r'): self.refresh_tree(); self.message="File tree refreshed"
         elif self.focus == "editor": self.edit_key(key)
         else:
-            if key in (3, 19): self.stop_process() # Ctrl-C / Ctrl-S
+            if key in (3, 19): self.stop_process() # Ctrl-C (Ctrl-S remains an alternate)
             elif key in (curses.KEY_HOME, 1): self.command = ""
             elif key in (curses.KEY_END, 5): pass
             elif key in (10,13,curses.KEY_ENTER): self.run_command()
@@ -309,7 +308,11 @@ class Orbit:
     def loop(self):
         try: curses.curs_set(2)
         except curses.error: pass
-        self.s.keypad(True); self.s.timeout(100); curses.mousemask(curses.ALL_MOUSE_EVENTS)
+        self.s.keypad(True)
+        # Raw mode disables the terminal's built-in SIGINT mapping so Ctrl-C
+        # arrives here as character 3 and can stop the child command safely.
+        curses.raw()
+        self.s.timeout(100); curses.mousemask(curses.ALL_MOUSE_EVENTS)
         while self.running:
             self.drain_process_output(); self.draw(); key = self.s.getch()
             if key == -1: continue
@@ -328,20 +331,7 @@ class Orbit:
 def main():
     root = Path(sys.argv[1] if len(sys.argv) > 1 else ".")
     if not root.is_dir(): print(f"Not a directory: {root}", file=sys.stderr); return 2
-    # Ctrl-S is XOFF by default in many macOS terminals. Disable it while
-    # Orbit runs so the editor receives the save shortcut, then restore it.
-    stdin = sys.stdin.fileno()
-    original_termios = termios.tcgetattr(stdin)
-    active_termios = termios.tcgetattr(stdin)
-    active_termios[0] &= ~termios.IXON
-    # Deliver Ctrl-C as character 3 to curses instead of turning it into a
-    # SIGINT/KeyboardInterrupt. Orbit uses that key to stop its child shell.
-    active_termios[3] &= ~termios.ISIG
-    termios.tcsetattr(stdin, termios.TCSADRAIN, active_termios)
-    try:
-        curses.wrapper(lambda screen: Orbit(screen, root).loop())
-    finally:
-        termios.tcsetattr(stdin, termios.TCSADRAIN, original_termios)
+    curses.wrapper(lambda screen: Orbit(screen, root).loop())
     return 0
 
 if __name__ == "__main__": raise SystemExit(main())
