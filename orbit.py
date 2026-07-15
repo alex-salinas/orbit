@@ -92,7 +92,14 @@ class Orbit:
         self.draw_editor(side + 1, 1, w - side - 1, edit_bottom - 1)
         self.draw_terminal(1, edit_bottom + 1, w - 2, term_h)
         status = f" {self.focus.upper()}  {self.message}"
-        self.s.attron(curses.color_pair(7)); self.s.addnstr(h-1, 0, status.ljust(w), w); self.s.attroff(curses.color_pair(7))
+        # ncurses returns ERR when a write fills the lower-right screen cell.
+        # Keep one column free so the status bar works in every terminal emulator.
+        self.s.attron(curses.color_pair(7))
+        try:
+            self.s.addnstr(h-1, 0, status.ljust(max(0, w-1)), max(0, w-1))
+        except curses.error:
+            pass
+        self.s.attroff(curses.color_pair(7))
         self.s.refresh()
 
     def draw_tree(self, x, width, bottom):
