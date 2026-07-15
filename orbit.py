@@ -9,6 +9,7 @@ import re
 import shlex
 import subprocess
 import sys
+import termios
 from pathlib import Path
 
 KEYWORDS = re.compile(r"\b(and|as|assert|async|await|break|class|const|def|elif|else|except|export|finally|for|from|function|if|import|in|let|lambda|new|not|or|pass|return|switch|try|var|while|with|yield)\b")
@@ -279,7 +280,17 @@ class Orbit:
 def main():
     root = Path(sys.argv[1] if len(sys.argv) > 1 else ".")
     if not root.is_dir(): print(f"Not a directory: {root}", file=sys.stderr); return 2
-    curses.wrapper(lambda screen: Orbit(screen, root).loop())
+    # Ctrl-S is XOFF by default in many macOS terminals. Disable it while
+    # Orbit runs so the editor receives the save shortcut, then restore it.
+    stdin = sys.stdin.fileno()
+    original_termios = termios.tcgetattr(stdin)
+    active_termios = termios.tcgetattr(stdin)
+    active_termios[0] &= ~termios.IXON
+    termios.tcsetattr(stdin, termios.TCSADRAIN, active_termios)
+    try:
+        curses.wrapper(lambda screen: Orbit(screen, root).loop())
+    finally:
+        termios.tcsetattr(stdin, termios.TCSADRAIN, original_termios)
     return 0
 
 if __name__ == "__main__": raise SystemExit(main())
