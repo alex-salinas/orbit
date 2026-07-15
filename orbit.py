@@ -55,6 +55,7 @@ class Orbit:
         self.tree_index = 0
         self.tree_top = 0
         self.expanded = set()
+        self.layout = {}
         self.show_hidden = False
         self.running = True
         self.setup_colors()
@@ -120,21 +121,6 @@ class Orbit:
             if idx is not None:
                 self.tree_index = idx
 
-    def tree_click(self, mx, my, x, width, bottom):
-        visible_height = self.tree_visible_height(bottom)
-        row = self.tree_top + (my - 2)
-        if row < 0 or row >= len(self.tree):
-            return
-        self.tree_index = row
-        path, depth, is_dir = self.tree[row]
-        col = mx - x
-        marker_col = depth * 2
-        if is_dir and marker_col <= col < marker_col + 2:
-            self.toggle_dir(path)
-        elif not is_dir:
-            self.open_file(path)
-        self.ensure_tree_visible(visible_height)
-
     def open_file(self, path):
         if path.is_dir(): return
         for i, buf in enumerate(self.buffers):
@@ -173,12 +159,43 @@ class Orbit:
 
     def active_buffer(self): return self.buffers[self.active] if self.buffers else None
 
+    def editor_click(self, mx, my):
+        layout = self.layout
+        buf = self.active_buffer()
+        if not layout or not buf:
+            self.focus = "editor"
+            return
+        ex, ey, ew, eh = layout["editor_x"], layout["editor_y"], layout["editor_w"], layout["editor_h"]
+        text_x, text_y = ex + 5, ey + 1
+        view_h = eh - 1
+        if my < text_y or my >= text_y + view_h:
+            self.focus = "editor"
+            return
+        self.focus = "editor"
+        buf.row = max(0, min(buf.top + (my - text_y), len(buf.lines) - 1))
+        if mx < text_x:
+            buf.col = 0
+        else:
+            buf.col = max(0, min(buf.left + (mx - text_x), len(buf.lines[buf.row])))
+        visible_w = max(1, ew - 6)
+        if buf.col < buf.left:
+            buf.left = buf.col
+        elif buf.col >= buf.left + visible_w:
+            buf.left = buf.col - visible_w + 1
+        buf.top = min(buf.top, buf.row)
+        if buf.row >= buf.top + view_h:
+            buf.top = buf.row - view_h + 1
+
     def draw(self):
         self.s.erase(); h, w = self.s.getmaxyx()
         if h < 12 or w < 55:
             self.s.addstr(0, 0, "Orbit needs a terminal of at least 55×12.")
             self.s.refresh(); return
         side = max(22, min(34, w // 4)); term_h = max(7, h // 4); edit_bottom = h - term_h - 2
+        self.layout = {
+            "side": side, "edit_bottom": edit_bottom, "term_y": edit_bottom + 1, "tree_x": 1,
+            "editor_x": side + 1, "editor_y": 1, "editor_w": w - side - 1, "editor_h": edit_bottom - 1,
+        }
         self.s.attron(curses.color_pair(1) | curses.A_BOLD)
         self.s.addnstr(0, 0, " ◈ ORBIT  ", w); self.s.addnstr(0, 12, str(self.root), w-12); self.s.attroff(curses.color_pair(1) | curses.A_BOLD)
         self.draw_tree(1, side, edit_bottom)
@@ -372,14 +389,15 @@ class Orbit:
     def handle(self, key):
         if key == 17: self.running = False # Ctrl-Q
         elif key == 14: self.new_file() # Ctrl-N
-        elif key == curses.KEY_F1: self.message = "Files: Enter/▸ toggle folder • ←/→ collapse/expand • PgUp/PgDn scroll • Ctrl-N new file • Ctrl-Q quit"
+        elif key == curses.KEY_F1: self.message = "Editor: click to place cursor • Ctrl-S save • Ctrl-N new file • Ctrl-Q quit • Ctrl-C stops shell"
         elif key == curses.KEY_F2: self.focus = "tree"
         elif key == curses.KEY_F3: self.focus = "terminal"
         elif key == curses.KEY_F5: self.open_ssh()
         elif key == 9: self.focus = {"tree":"editor", "editor":"terminal", "terminal":"tree"}[self.focus]
         elif key in (ord('q'),) and self.focus == "tree": self.running = False
         elif self.focus == "tree":
-            visible_height = self.tree_visible_height(self.s.getmaxyx()[0] - max(7, self.s.getmaxyx()[0] // 4) - 2)
+            layout = self.layout
+            visible_height = self.tree_visible_height(layout["edit_bottom"]) if layout else 0
             if key == curses.KEY_UP: self.tree_index = max(0, self.tree_index - 1)
             elif key == curses.KEY_DOWN: self.tree_index = min(len(self.tree) - 1, self.tree_index + 1)
             elif key == curses.KEY_PPAGE: self.tree_index = max(0, self.tree_index - visible_height)
@@ -390,15 +408,13 @@ class Orbit:
                 path, _, is_dir = self.tree[self.tree_index]
                 if is_dir: self.toggle_dir(path)
                 else: self.open_file(path)
-            elif key in (curses.KEY_RIGHT,):  # expand folder
-                if self.tree:
-                    path, _, is_dir = self.tree[self.tree_index]
-                    if is_dir and path not in self.expanded:
-                        self.expanded.add(path); self.refresh_tree()
-            elif key in (curses.KEY_LEFT,):  # collapse folder
-                if self.tree:
-                    path, _, is_dir = self.tree[self.tree_index]
-                    if is_dir and path in self.expanded: self.toggle_dir(path)
+            elif key in (curses.KEY_RIGHT,) and self.tree:
+                path, _, is_dir = self.tree[self.tree_index]
+                if is_dir and path not in self.expanded:
+                    self.expanded.add(path); self.refresh_tree()
+            elif key in (curses.KEY_LEFT,) and self.tree:
+                path, _, is_dir = self.tree[self.tree_index]
+                if is_dir and path in self.expanded: self.toggle_dir(path)
             elif key == ord('r'): self.refresh_tree(); self.message = "File tree refreshed"
             if key in (curses.KEY_UP, curses.KEY_DOWN, curses.KEY_PPAGE, curses.KEY_NPAGE,
                        curses.KEY_HOME, curses.KEY_END, curses.KEY_RIGHT, curses.KEY_LEFT):
@@ -425,13 +441,26 @@ class Orbit:
             if key == -1: continue
             if key == curses.KEY_MOUSE:
                 try:
-                    _, mx, my, _, state = curses.getmouse(); h,w=self.s.getmaxyx(); side=max(22,min(34,w//4)); term_y=h-max(7,h//4)-1
-                    if state & curses.BUTTON1_CLICKED:
-                        if my >= term_y: self.focus = "terminal"
-                        elif mx <= side and my >= 2:
+                    _, mx, my, _, state = curses.getmouse()
+                    layout = self.layout
+                    if not layout:
+                        continue
+                    h, w = self.s.getmaxyx()
+                    side, edit_bottom, term_y, tree_x = layout["side"], layout["edit_bottom"], layout["term_y"], layout["tree_x"]
+                    clicked = state & (curses.BUTTON1_CLICKED | curses.BUTTON1_PRESSED)
+                    if clicked:
+                        if my >= term_y:
+                            self.focus = "terminal"
+                        elif tree_x <= mx < side and 2 <= my < edit_bottom:
                             self.focus = "tree"
-                            self.tree_click(mx, my, 1, side, term_y)
-                        else: self.focus = "editor"
+                            row = self.tree_top + (my - 2)
+                            if 0 <= row < len(self.tree):
+                                self.tree_index = row
+                                self.ensure_tree_visible(self.tree_visible_height(edit_bottom))
+                        elif layout["editor_x"] <= mx < w - 1 and layout["editor_y"] <= my < edit_bottom:
+                            self.editor_click(mx, my)
+                        else:
+                            self.focus = "editor"
                 except curses.error: pass
             else: self.handle(key)
         self.stop_process()
