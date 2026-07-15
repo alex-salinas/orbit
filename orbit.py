@@ -161,11 +161,20 @@ class Orbit:
 
     def editor_click(self, mx, my):
         layout = self.layout
-        buf = self.active_buffer()
-        if not layout or not buf:
-            self.focus = "editor"
+        if not layout:
             return
         ex, ey, ew, eh = layout["editor_x"], layout["editor_y"], layout["editor_w"], layout["editor_h"]
+        if my == ey:
+            self.focus = "editor"
+            for start, end, idx in layout.get("tab_regions", []):
+                if start <= mx < end:
+                    self.active = idx
+                    return
+            return
+        buf = self.active_buffer()
+        if not buf:
+            self.focus = "editor"
+            return
         text_x, text_y = ex + 5, ey + 1
         view_h = eh - 1
         if my < text_y or my >= text_y + view_h:
@@ -260,8 +269,23 @@ class Orbit:
 
     def draw_editor(self, x, y, width, height):
         buf = self.active_buffer()
-        tabs = " ".join((f"[{b.title}]" if i == self.active else b.title) for i, b in enumerate(self.buffers)) or "  No file open — choose one in FILES"
-        self.s.attron(curses.A_BOLD); self.s.addnstr(y, x, tabs, width); self.s.attroff(curses.A_BOLD)
+        tab_regions = []
+        col = x
+        for i, b in enumerate(self.buffers):
+            label = f"[{b.title}]" if i == self.active else b.title
+            if col >= x + width:
+                break
+            style = curses.A_BOLD | (curses.A_REVERSE if i == self.active else 0)
+            try: self.s.addnstr(y, col, label, min(len(label), x + width - col), style)
+            except curses.error: pass
+            tab_regions.append((col, col + len(label), i))
+            col += len(label) + 1
+        if not self.buffers:
+            self.s.attron(curses.A_BOLD)
+            try: self.s.addnstr(y, x, "  No file open — choose one in FILES", width)
+            except curses.error: pass
+            self.s.attroff(curses.A_BOLD)
+        self.layout["tab_regions"] = tab_regions
         if not buf: return
         view_h = height - 1; buf.top = max(0, min(buf.top, max(0, len(buf.lines)-view_h)))
         for i in range(view_h):
