@@ -53,6 +53,8 @@ class Orbit:
         self.process = None
         self.process_output = queue.Queue()
         self.tree_index = 0
+        self.tree_top = 0
+        self.expanded = set()
         self.show_hidden = False
         self.running = True
         self.setup_colors()
@@ -65,17 +67,73 @@ class Orbit:
                  (5, curses.COLOR_GREEN, -1), (6, curses.COLOR_BLUE, -1), (7, curses.COLOR_WHITE, curses.COLOR_BLUE)]
         for i, fg, bg in pairs: curses.init_pair(i, fg, bg)
 
-    def refresh_tree(self):
+    def refresh_tree(self, keep_path=None):
+        selected = keep_path
+        if selected is None and self.tree:
+            selected = self.tree[self.tree_index][0]
         self.tree = []
         def visit(directory, depth):
             try: entries = sorted(directory.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))
             except OSError: return
             for p in entries:
                 if not self.show_hidden and p.name.startswith("."): continue
-                self.tree.append((p, depth, p.is_dir()))
-                if p.is_dir() and depth < 4: visit(p, depth + 1)
+                is_dir = p.is_dir()
+                self.tree.append((p, depth, is_dir))
+                if is_dir and p in self.expanded:
+                    visit(p, depth + 1)
         visit(self.root, 0)
-        self.tree_index = min(self.tree_index, max(0, len(self.tree)-1))
+        if selected:
+            for i, (path, _, _) in enumerate(self.tree):
+                if path == selected:
+                    self.tree_index = i
+                    return
+        self.tree_index = min(self.tree_index, max(0, len(self.tree) - 1))
+
+    def tree_visible_height(self, bottom):
+        return max(0, bottom - 2)
+
+    def ensure_tree_visible(self, visible_height):
+        if not self.tree:
+            self.tree_top = 0
+            return
+        if self.tree_index < self.tree_top:
+            self.tree_top = self.tree_index
+        elif self.tree_index >= self.tree_top + visible_height:
+            self.tree_top = self.tree_index - visible_height + 1
+        self.tree_top = min(self.tree_top, max(0, len(self.tree) - visible_height))
+
+    def find_tree_index(self, path):
+        for i, (p, _, _) in enumerate(self.tree):
+            if p == path:
+                return i
+        return None
+
+    def toggle_dir(self, path):
+        if path in self.expanded:
+            self.expanded.discard(path)
+        else:
+            self.expanded.add(path)
+        selected = self.tree[self.tree_index][0] if self.tree else None
+        self.refresh_tree()
+        if selected and self.find_tree_index(selected) is None:
+            idx = self.find_tree_index(path)
+            if idx is not None:
+                self.tree_index = idx
+
+    def tree_click(self, mx, my, x, width, bottom):
+        visible_height = self.tree_visible_height(bottom)
+        row = self.tree_top + (my - 2)
+        if row < 0 or row >= len(self.tree):
+            return
+        self.tree_index = row
+        path, depth, is_dir = self.tree[row]
+        col = mx - x
+        marker_col = depth * 2
+        if is_dir and marker_col <= col < marker_col + 2:
+            self.toggle_dir(path)
+        elif not is_dir:
+            self.open_file(path)
+        self.ensure_tree_visible(visible_height)
 
     def open_file(self, path):
         if path.is_dir(): return
@@ -140,12 +198,21 @@ class Orbit:
     def draw_tree(self, x, width, bottom):
         title = " FILES " + ("[focus]" if self.focus == "tree" else "")
         self.s.attron(curses.A_BOLD); self.s.addnstr(1, x, title, width-1); self.s.attroff(curses.A_BOLD)
-        for screen_y, (path, depth, is_dir) in enumerate(self.tree[:bottom-2], 2):
-            idx = screen_y - 2; marker = "▾ " if is_dir else "  "; name = ("▣ " if is_dir else "· ") + path.name
+        visible_height = self.tree_visible_height(bottom)
+        self.ensure_tree_visible(visible_height)
+        for screen_y, (path, depth, is_dir) in enumerate(self.tree[self.tree_top:self.tree_top + visible_height], 2):
+            idx = self.tree_top + (screen_y - 2)
+            expanded = path in self.expanded
+            marker = "▾ " if is_dir and expanded else ("▸ " if is_dir else "  ")
+            name = ("▣ " if is_dir else "· ") + path.name
             text = " " * (depth * 2) + marker + name
             style = curses.A_REVERSE if idx == self.tree_index and self.focus == "tree" else 0
             if is_dir: style |= curses.color_pair(3)
             try: self.s.addnstr(screen_y, x, text.ljust(width-1), width-1, style)
+            except curses.error: pass
+        if len(self.tree) > visible_height:
+            scroll = f" {self.tree_index + 1}/{len(self.tree)} "
+            try: self.s.addnstr(1, x + width - len(scroll) - 1, scroll, len(scroll), curses.color_pair(2))
             except curses.error: pass
         for y in range(1, bottom):
             try: self.s.addch(y, width, curses.ACS_VLINE)
@@ -305,17 +372,37 @@ class Orbit:
     def handle(self, key):
         if key == 17: self.running = False # Ctrl-Q
         elif key == 14: self.new_file() # Ctrl-N
-        elif key == curses.KEY_F1: self.message = "Ctrl-N new file • Ctrl-Q quit • Ctrl-S saves • Home/End (or Ctrl-A/E) line start/end • Ctrl-C stops shell"
+        elif key == curses.KEY_F1: self.message = "Files: Enter/▸ toggle folder • ←/→ collapse/expand • PgUp/PgDn scroll • Ctrl-N new file • Ctrl-Q quit"
         elif key == curses.KEY_F2: self.focus = "tree"
         elif key == curses.KEY_F3: self.focus = "terminal"
         elif key == curses.KEY_F5: self.open_ssh()
         elif key == 9: self.focus = {"tree":"editor", "editor":"terminal", "terminal":"tree"}[self.focus]
         elif key in (ord('q'),) and self.focus == "tree": self.running = False
         elif self.focus == "tree":
-            if key == curses.KEY_UP: self.tree_index=max(0,self.tree_index-1)
-            elif key == curses.KEY_DOWN: self.tree_index=min(len(self.tree)-1,self.tree_index+1)
-            elif key in (10,13,curses.KEY_ENTER) and self.tree: self.open_file(self.tree[self.tree_index][0])
-            elif key == ord('r'): self.refresh_tree(); self.message="File tree refreshed"
+            visible_height = self.tree_visible_height(self.s.getmaxyx()[0] - max(7, self.s.getmaxyx()[0] // 4) - 2)
+            if key == curses.KEY_UP: self.tree_index = max(0, self.tree_index - 1)
+            elif key == curses.KEY_DOWN: self.tree_index = min(len(self.tree) - 1, self.tree_index + 1)
+            elif key == curses.KEY_PPAGE: self.tree_index = max(0, self.tree_index - visible_height)
+            elif key == curses.KEY_NPAGE: self.tree_index = min(len(self.tree) - 1, self.tree_index + visible_height)
+            elif key == curses.KEY_HOME: self.tree_index = 0
+            elif key == curses.KEY_END: self.tree_index = max(0, len(self.tree) - 1)
+            elif key in (10, 13, curses.KEY_ENTER) and self.tree:
+                path, _, is_dir = self.tree[self.tree_index]
+                if is_dir: self.toggle_dir(path)
+                else: self.open_file(path)
+            elif key in (curses.KEY_RIGHT,):  # expand folder
+                if self.tree:
+                    path, _, is_dir = self.tree[self.tree_index]
+                    if is_dir and path not in self.expanded:
+                        self.expanded.add(path); self.refresh_tree()
+            elif key in (curses.KEY_LEFT,):  # collapse folder
+                if self.tree:
+                    path, _, is_dir = self.tree[self.tree_index]
+                    if is_dir and path in self.expanded: self.toggle_dir(path)
+            elif key == ord('r'): self.refresh_tree(); self.message = "File tree refreshed"
+            if key in (curses.KEY_UP, curses.KEY_DOWN, curses.KEY_PPAGE, curses.KEY_NPAGE,
+                       curses.KEY_HOME, curses.KEY_END, curses.KEY_RIGHT, curses.KEY_LEFT):
+                self.ensure_tree_visible(visible_height)
         elif self.focus == "editor": self.edit_key(key)
         else:
             if key in (3, 19): self.stop_process() # Ctrl-C (Ctrl-S remains an alternate)
@@ -340,9 +427,11 @@ class Orbit:
                 try:
                     _, mx, my, _, state = curses.getmouse(); h,w=self.s.getmaxyx(); side=max(22,min(34,w//4)); term_y=h-max(7,h//4)-1
                     if state & curses.BUTTON1_CLICKED:
-                        if my >= term_y: self.focus="terminal"
-                        elif mx <= side and my >= 2: self.focus="tree"; self.tree_index=min(max(0,my-2),len(self.tree)-1)
-                        else: self.focus="editor"
+                        if my >= term_y: self.focus = "terminal"
+                        elif mx <= side and my >= 2:
+                            self.focus = "tree"
+                            self.tree_click(mx, my, 1, side, term_y)
+                        else: self.focus = "editor"
                 except curses.error: pass
             else: self.handle(key)
         self.stop_process()
