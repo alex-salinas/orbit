@@ -11,6 +11,8 @@ python3 orbit.py ~/code/project
 - `F1` help, `F2` files, `F3` shell, `F5` open an interactive SSH session
 - `Tab` moves between file tree, editor, and command shell
 - `Ctrl-N` creates a file relative to the project root; `Ctrl-Q` exits Orbit
+- `Ctrl-S` saves; `Home`/`End` (or `Ctrl-A`/`Ctrl-E`) move to the start/end of the current editor line
+- Shell commands stream their output live. `Ctrl-C` stops the running command, including `php -S localhost:8000`.
 - Arrow keys and Enter select a file; `r` refreshes the tree
 - `Ctrl-S` saves the open file
 - In the shell, execute any local command in the project directory
