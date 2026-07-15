@@ -121,6 +121,21 @@ class Orbit:
             if idx is not None:
                 self.tree_index = idx
 
+    def tree_click(self, row, double=False):
+        if row < 0 or row >= len(self.tree):
+            return
+        self.tree_index = row
+        layout = self.layout
+        if layout:
+            self.ensure_tree_visible(self.tree_visible_height(layout["edit_bottom"]))
+        if not double:
+            return
+        path, _, is_dir = self.tree[row]
+        if is_dir:
+            self.toggle_dir(path)
+        else:
+            self.open_file(path)
+
     def open_file(self, path):
         if path.is_dir(): return
         for i, buf in enumerate(self.buffers):
@@ -472,15 +487,13 @@ class Orbit:
                     h, w = self.s.getmaxyx()
                     side, edit_bottom, term_y, tree_x = layout["side"], layout["edit_bottom"], layout["term_y"], layout["tree_x"]
                     clicked = state & (curses.BUTTON1_CLICKED | curses.BUTTON1_PRESSED)
-                    if clicked:
+                    dclicked = state & getattr(curses, "BUTTON1_DOUBLE_CLICKED", 0)
+                    if clicked or dclicked:
                         if my >= term_y:
                             self.focus = "terminal"
                         elif tree_x <= mx < side and 2 <= my < edit_bottom:
                             self.focus = "tree"
-                            row = self.tree_top + (my - 2)
-                            if 0 <= row < len(self.tree):
-                                self.tree_index = row
-                                self.ensure_tree_visible(self.tree_visible_height(edit_bottom))
+                            self.tree_click(self.tree_top + (my - 2), double=bool(dclicked))
                         elif layout["editor_x"] <= mx < w - 1 and layout["editor_y"] <= my < edit_bottom:
                             self.editor_click(mx, my)
                         else:
