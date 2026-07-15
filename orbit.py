@@ -256,11 +256,25 @@ class Orbit:
             self.s.reset_prog_mode(); curses.curs_set(1); self.message = f"Returned from SSH session: {host}"
 
     def ask(self, prompt):
-        h, w = self.s.getmaxyx(); self.s.addnstr(h-2, 0, prompt.ljust(w), w, curses.color_pair(7)); self.s.refresh()
-        curses.echo(); curses.curs_set(1)
-        try: result = self.s.getstr(h-2, min(len(prompt), w-1), w-len(prompt)-1).decode()
-        except curses.error: result = ""
-        curses.noecho(); return result.strip()
+        # Keep prompts in raw mode. curses.getstr()/echo() can conflict with
+        # the raw keyboard mode that lets Orbit receive Ctrl-C itself.
+        h, w = self.s.getmaxyx()
+        value = ""
+        self.s.timeout(-1)
+        try:
+            while True:
+                line = (prompt + value)[:max(0, w - 1)]
+                self.s.addnstr(h - 2, 0, line.ljust(max(0, w - 1)), max(0, w - 1), curses.color_pair(7))
+                try: self.s.move(h - 2, min(len(prompt) + len(value), w - 2))
+                except curses.error: pass
+                self.s.refresh()
+                key = self.s.getch()
+                if key in (10, 13, curses.KEY_ENTER): return value.strip()
+                if key == 27: return ""  # Escape cancels
+                if key in (curses.KEY_BACKSPACE, 127, 8): value = value[:-1]
+                elif 32 <= key <= 126: value += chr(key)
+        finally:
+            self.s.timeout(100)
 
     def edit_key(self, key):
         b = self.active_buffer()
