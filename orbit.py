@@ -194,7 +194,7 @@ class Orbit:
 
     def draw_terminal(self, x, y, width, height):
         self.s.hline(y-1, x, curses.ACS_HLINE, width)
-        running = f" ● pid {self.process.pid} — Ctrl-C stop" if self.process else ""
+        running = f" ● pid {self.process.pid} — Ctrl-S stop" if self.process else ""
         title = " SHELL " + ("[focus]" if self.focus == "terminal" else "") + running
         self.s.addnstr(y, x, title, width, curses.A_BOLD)
         visible = self.term_lines[-(height-3):]
@@ -286,7 +286,7 @@ class Orbit:
     def handle(self, key):
         if key == 17: self.running = False # Ctrl-Q
         elif key == 14: self.new_file() # Ctrl-N
-        elif key == curses.KEY_F1: self.message = "Ctrl-N new file • Ctrl-Q quit • Ctrl-S save • Home/End (or Ctrl-A/E) line start/end • Ctrl-C stops shell"
+        elif key == curses.KEY_F1: self.message = "Ctrl-N new file • Ctrl-Q quit • Ctrl-S saves in editor / stops shell • Home/End (or Ctrl-A/E) line start/end"
         elif key == curses.KEY_F2: self.focus = "tree"
         elif key == curses.KEY_F3: self.focus = "terminal"
         elif key == curses.KEY_F5: self.open_ssh()
@@ -299,7 +299,7 @@ class Orbit:
             elif key == ord('r'): self.refresh_tree(); self.message="File tree refreshed"
         elif self.focus == "editor": self.edit_key(key)
         else:
-            if key == 3: self.stop_process() # Ctrl-C
+            if key in (3, 19): self.stop_process() # Ctrl-C / Ctrl-S
             elif key in (curses.KEY_HOME, 1): self.command = ""
             elif key in (curses.KEY_END, 5): pass
             elif key in (10,13,curses.KEY_ENTER): self.run_command()
