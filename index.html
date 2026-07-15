@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Orbit — Terminal IDE</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand"><span class="brand-mark">◈</span>orbit<span class="brand-sub">terminal ide</span></div>
+        <nav class="menu"><button>File</button><button>Edit</button><button>Selection</button><button>View</button><button>Go</button><button>Run</button><button>Terminal</button></nav>
+        <div class="window-actions"><button title="Minimize">—</button><button title="Maximize">□</button><button title="Close">×</button></div>
+      </header>
+
+      <div class="workspace">
+        <aside class="activity-bar" aria-label="Activity bar">
+          <button class="activity active" title="Explorer">▤</button><button class="activity" title="Search">⌕</button><button class="activity" title="Source control">⑂</button><button class="activity" title="Extensions">▦</button>
+          <div class="activity-spacer"></div><button class="activity" title="Settings">⚙</button>
+        </aside>
+
+        <aside class="sidebar" id="sidebar">
+          <div class="sidebar-heading"><span>EXPLORER</span><button id="newFile" title="New file">＋</button></div>
+          <div class="project-title"><span class="chevron">⌄</span> MY-APP</div>
+          <div class="tree" id="fileTree"></div>
+        </aside>
+        <div class="resizer vertical" id="sideResizer"></div>
+
+        <main class="main-area">
+          <section class="editor-panel">
+            <div class="tabs" id="tabs"></div>
+            <div class="editor-wrap">
+              <div class="line-numbers" id="lineNumbers"></div>
+              <div class="code-stage">
+                <pre id="highlight" aria-hidden="true"><code></code></pre>
+                <textarea id="editor" spellcheck="false" aria-label="Code editor"></textarea>
+              </div>
+              <div class="minimap" id="minimap"></div>
+            </div>
+          </section>
+          <div class="resizer horizontal" id="termResizer"></div>
+          <section class="terminal-panel" id="terminalPanel">
+            <div class="terminal-head"><div class="terminal-tabs"><button class="terminal-active">TERMINAL</button><button>OUTPUT</button><button>PROBLEMS <span>0</span></button></div><div><button id="clearTerminal" title="Clear terminal">⌫</button><button title="Split terminal">▯</button><button title="Kill terminal">×</button></div></div>
+            <div class="terminal-output" id="terminalOutput"></div>
+            <form id="terminalForm" class="prompt"><span>➜</span><span class="cwd">~/my-app</span><input id="terminalInput" autocomplete="off" autofocus aria-label="Terminal command" /><button aria-label="Run command">↵</button></form>
+          </section>
+        </main>
+      </div>
+      <footer class="statusbar"><span><b>main</b> ⎇</span><span id="cursorPosition">Ln 1, Col 1</span><span>Spaces: 2</span><span>UTF-8</span><span>LF</span><span id="languageLabel">JavaScript</span><span class="status-grow"></span><span>◔ Ready</span></footer>
+    </div>
+    <div id="toast" role="status"></div>
+    <script src="./app.js"></script>
+  </body>
+</html>
