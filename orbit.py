@@ -84,11 +84,17 @@ class Orbit:
         self.buffers.append(Buffer(path)); self.active = len(self.buffers)-1; self.focus = "editor"
 
     def new_file(self):
-        """Create a project-local file and immediately open it in a tab."""
-        name = self.ask("New file (relative to project): ")
+        """Create a file in the selected folder and immediately open it."""
+        base = self.root
+        if self.tree:
+            selected, _, is_directory = self.tree[self.tree_index]
+            base = selected if is_directory else selected.parent
+        relative_base = base.relative_to(self.root)
+        location = "." if str(relative_base) == "." else str(relative_base)
+        name = self.ask(f"New file in {location}: ")
         if not name:
             return
-        target = (self.root / name).resolve()
+        target = (base / name).resolve()
         try:
             target.relative_to(self.root)
         except ValueError:
